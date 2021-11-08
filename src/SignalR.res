@@ -1,10 +1,41 @@
 module Message = {
-  type token = Js.Json.t
+  // https://github.com/dotnet/aspnetcore/blob/main/src/SignalR/docs/specs/HubProtocol.md
 
-  type handshakeRequest = {
-    protocol: string,
-    version: int,
+  module Handshake = {
+    type request = {
+      protocol: string,
+      version: int,
+    }
+
+    let requestCodec = Jzon.object2(
+      ({protocol, version}) => (protocol, version),
+      ((protocol, version)) => Ok({protocol: protocol, version: version}),
+      Jzon.field("protocol", Jzon.string),
+      Jzon.field("version", Jzon.int),
+    )
+
+    let responseCodec = Jzon.object1(
+      error => error,
+      error => Ok(error),
+      Jzon.field("error", Jzon.string)->Jzon.optional,
+    )
+
+    let recordSeparator = "\x1E"
+
+    let encodeRequest = req => req->Jzon.encodeStringWith(requestCodec) ++ recordSeparator
+
+    let decodeResponse = str => {
+      if str->Js.String2.endsWith(recordSeparator) {
+        str
+        ->Js.String2.slice(~from=0, ~to_=Js.String2.length(str) - 1)
+        ->Jzon.decodeStringWith(responseCodec)
+      } else {
+        Error(#SyntaxError("Record does not end with ASCII character 0x1E"))
+      }
+    }
   }
+
+  type token = Js.Json.t
 
   type invocation = {
     invocationId: option<string>,
@@ -36,19 +67,6 @@ module Message = {
     | CancelInvocation({invocationId: string})
     | Ping
     | Close(close)
-
-  let handshakeRequest = Jzon.object2(
-    ({protocol, version}) => (protocol, version),
-    ((protocol, version)) => Ok({protocol: protocol, version: version}),
-    Jzon.field("protocol", Jzon.string),
-    Jzon.field("version", Jzon.int),
-  )
-
-  let handshakeResponse = Jzon.object1(
-    error => error,
-    error => Ok(error),
-    Jzon.field("error", Jzon.string)->Jzon.optional,
-  )
 
   let invocation = Jzon.object4(
     ({invocationId, target, arguments, streamIds}) => (invocationId, target, arguments, streamIds),

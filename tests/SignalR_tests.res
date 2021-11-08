@@ -4,22 +4,21 @@ open SignalR.Message
 let encode = (codec, val) => Jzon.encodeString(codec, val)
 let decode = (codec, str) => Jzon.decodeString(codec, str)->Belt.Result.getExn
 
+let equal = (~message=?, a, b) =>
+  Test.assertion(~message?, ~operator="equal", (a, b) => a == b, a, b)
+
 test("encode", () => {
-  handshakeRequest
-  ->encode({protocol: "json", version: 1})
-  ->Assert.stringEqual(~message="HandshakeRequest", `{"protocol":"json","version":1}`)
+  Handshake.encodeRequest({protocol: "json", version: 1})->Assert.stringEqual(
+    ~message="HandshakeRequest",
+    `{"protocol":"json","version":1}\x1E`,
+  )
 
   message->encode(Ping)->Assert.stringEqual(~message="Ping", `{"type":6}`)
 })
 
-let equal = (~message=?, a, b) =>
-  Test.assertion(~message?, ~operator="equal", (a, b) => a == b, a, b)
-
 test("decode", () => {
-  handshakeResponse
-  ->decode(`{
-    "error": "Requested protocol 'messagepack' is not available."
-	}`)
+  Handshake.decodeResponse(`{"error":"Requested protocol 'messagepack' is not available."}\x1E`)
+  ->Belt.Result.getExn
   ->equal(~message="HandshakeResponse", Some("Requested protocol 'messagepack' is not available."))
 
   message
