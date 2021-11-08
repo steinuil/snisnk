@@ -1,0 +1,9 @@
+node_modules/
+/lib/
+
+.merlin
+.bsb.lock
+yarn-error.log
+
+src/*.js
+tests/*.js
