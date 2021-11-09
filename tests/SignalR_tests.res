@@ -8,7 +8,7 @@ let equal = (~message=?, a, b) =>
   Test.assertion(~message?, ~operator="equal", (a, b) => a == b, a, b)
 
 test("encode", () => {
-  Handshake.encodeRequest({protocol: "json", version: 1})->Assert.stringEqual(
+  Handshake.request->Assert.stringEqual(
     ~message="HandshakeRequest",
     `{"protocol":"json","version":1}\x1E`,
   )
@@ -17,7 +17,7 @@ test("encode", () => {
 })
 
 test("decode", () => {
-  Handshake.decodeResponse(`{"error":"Requested protocol 'messagepack' is not available."}\x1E`)
+  Handshake.decode(`{"error":"Requested protocol 'messagepack' is not available."}\x1E`)
   ->Belt.Result.getExn
   ->equal(~message="HandshakeResponse", Some("Requested protocol 'messagepack' is not available."))
 
