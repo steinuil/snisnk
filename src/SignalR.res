@@ -1,6 +1,18 @@
 module Message = {
   // https://github.com/dotnet/aspnetcore/blob/main/src/SignalR/docs/specs/HubProtocol.md
 
+  let recordSeparator = "\x1E"
+
+  let encodeWith = (codec, req) => req->Jzon.encodeStringWith(codec) ++ recordSeparator
+
+  let decodeWith = (codec, str) => {
+    if str->Js.String2.endsWith(recordSeparator) {
+      str->Js.String2.slice(~from=0, ~to_=Js.String2.length(str) - 1)->Jzon.decodeStringWith(codec)
+    } else {
+      Error(#SyntaxError("Message does not end with ASCII character 0x1E"))
+    }
+  }
+
   module Handshake = {
     type request = {
       protocol: string,
@@ -20,19 +32,9 @@ module Message = {
       Jzon.field("error", Jzon.string)->Jzon.optional,
     )
 
-    let recordSeparator = "\x1E"
+    let request = encodeWith(requestCodec, {protocol: "json", version: 1})
 
-    let encodeRequest = req => req->Jzon.encodeStringWith(requestCodec) ++ recordSeparator
-
-    let decodeResponse = str => {
-      if str->Js.String2.endsWith(recordSeparator) {
-        str
-        ->Js.String2.slice(~from=0, ~to_=Js.String2.length(str) - 1)
-        ->Jzon.decodeStringWith(responseCodec)
-      } else {
-        Error(#SyntaxError("Record does not end with ASCII character 0x1E"))
-      }
-    }
+    let decode = decodeWith(responseCodec)
   }
 
   type token = Js.Json.t
@@ -149,4 +151,54 @@ module Message = {
     Jzon.field("type", Jzon.int),
     Jzon.self,
   )
+
+  let encode = encodeWith(message)
+
+  let decode = decodeWith(message)
+}
+
+let connectHub = address => {
+  let ws = WebSocket.make(address)
+
+  let send = msg => ws->WebSocket.send(msg)
+
+  let connectPromise = Promise.make((resolve, reject) => {
+    let handlePing = (. msg) => {
+      let msg = msg->WebSocket.MessageEvent.data
+
+      switch msg->Message.decode {
+      | Ok(Ping) => Message.Ping->Message.encode->send
+      | Ok(_) => ()
+      | Error(e) => Js.Console.warn(e)
+      }
+    }
+
+    let rec handleHandshakeResponse = (. msg) => {
+      let msg = msg->WebSocket.MessageEvent.data
+
+      switch msg->Message.Handshake.decode {
+      | Ok(None) => {
+          ws->WebSocket.off(#message(handleHandshakeResponse))
+          ws->WebSocket.on(#message(handlePing))
+          resolve(. ignore())
+        }
+      | Ok(Some(e)) => reject(. e)
+      | Error(e) => reject(. e->Jzon.DecodingError.toString)
+      }
+    }
+
+    ws->WebSocket.on(#message(handleHandshakeResponse))
+
+    let login = (. ()) => {
+      Message.Handshake.request->send
+    }
+
+    switch ws->WebSocket.readyState {
+    | #2 | #3 => reject(. "closed")
+    | #1 => login(.)
+    | #0 => ws->WebSocket.on(#open_(login))
+    }
+  })
+
+  (ws, connectPromise)
 }
